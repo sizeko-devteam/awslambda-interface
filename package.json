@@ -7,6 +7,10 @@
   ],
   "license": "ISC",
   "description": "node package for lambda functions to consist serverless API backend on aws",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sizeko-devteam/awslambda-interface.git"
+  },
   "scripts": {},
   "devDependencies": {},
   "dependencies": {
