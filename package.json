@@ -1,0 +1,15 @@
+{
+  "name": "@sizeko/awslambda-interface",
+  "version": "0.0.1",
+  "main": "index.js",
+  "authors": [
+    "sizeko.devteam <sizeko.devteam@gmail.com>"
+  ],
+  "license": "ISC",
+  "description": "node package for lambda functions to consist serverless API backend on aws",
+  "scripts": {},
+  "devDependencies": {},
+  "dependencies": {
+    "dotenv": "^8.2.0"
+  }
+}
