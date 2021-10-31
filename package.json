@@ -1,6 +1,6 @@
 {
   "name": "@sizeko/awslambda-interface",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "main": "index.js",
   "authors": [
     "sizeko.devteam <sizeko.devteam@gmail.com>"
