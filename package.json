@@ -11,6 +11,11 @@
     "type": "git",
     "url": "git+https://github.com/sizeko-devteam/awslambda-interface.git"
   },
+  "keywords": [
+    "aws",
+    "lambda",
+    "api-gateway"
+  ],
   "scripts": {},
   "devDependencies": {},
   "dependencies": {
