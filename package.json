@@ -2,23 +2,18 @@
   "name": "@sizeko/awslambda-interface",
   "version": "0.1.4",
   "main": "index.js",
-  "authors": [
-    "sizeko.devteam <sizeko.devteam@gmail.com>"
-  ],
+  "author": "sizeko.devteam <sizeko.devteam@gmail.com>",
   "license": "ISC",
   "description": "node package for lambda functions to consist serverless API backend on aws",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/sizeko-devteam/awslambda-interface.git"
   },
-  "keywords": [
-    "aws",
-    "lambda",
-    "api-gateway"
-  ],
+  "keywords": [],
   "scripts": {},
   "devDependencies": {},
   "dependencies": {
-    "dotenv": "^8.2.0"
+    "dotenv": "^8.2.0",
+    "lambda-multipart-parser": "^1.0.1"
   }
 }

@@ -4,11 +4,7 @@ require('dotenv').config();
 const AWS = require('aws-sdk');
       AWS.config.update({region: process.env.AWS_REGION});
 const lambda = new AWS.Lambda();
-//==============================================================
-// check Path is available
-function isServicePath(ServicePath,path) {
-  return ServicePath.includes(path);
-}
+const multipartParser = require('lambda-multipart-parser');
 //==============================================================
 function runServiceByURLPath(param) {
   if(!param.inputValues) param.inputValues = {};
@@ -17,8 +13,7 @@ function runServiceByURLPath(param) {
   if(param.apiStage && param.apiStage !== 'prod') _functionName = `${_functionName}-${param.apiStage}`;
   //------------------------------------------------------
   let _inputValues = param.inputValues;
-  console.log(`runServiceByURLPath ---------------------`);
-  console.log(`param.inputValues ---------------------`);
+  console.log(`runServiceByURLPath :: param.inputValues ---------------------`);
   console.log(param.inputValues);
   // console.log(param.inputValues['get']);
   // console.log(JSON.parse(param.inputValues['get'])[param.functionName.replace('get-','')]);
@@ -32,6 +27,7 @@ function runServiceByURLPath(param) {
   }
   // console.log(_inputValues);
   //------------------------------------------------------
+  console.log(`${param.serviceName}-${_functionName}`);
   return new Promise((resolve, reject) => {
     lambda.invoke({
       FunctionName : `${param.serviceName}-${_functionName}`,
@@ -79,7 +75,7 @@ function processMultiValueQueryParam(param) {
   }
 }
 //==============================================================
-function getValueByJsonPath (jsonObject, jsonPath) {
+function getValueByJsonPath (jsonPath, jsonObject) {
   console.log(`*** getValueByJsonPath :: ${jsonObject} :: ${jsonPath}`);
   if(!jsonObject||!jsonPath) return false;
   let result = true;
@@ -112,34 +108,118 @@ function getValueByJsonPath (jsonObject, jsonPath) {
   return result;
 }
 //==============================================================
-// check Path is available
-function isAvailableRequestStructure(RequestStructure, bodyJson) {
-  console.log(bodyJson);
-  // let keys1 = Object.keys(bodyJson);
-  let _result = false;
-  for(let i = 0, _length_i = RequestStructure.length; i < _length_i; i += 1)
-  {
-    let _keyArray = RequestStructure[i].split('.');
-    let _targetBodyValue = getValueByJsonPath(bodyJson, RequestStructure[i]);
-    // console.log(RequestStructure[i]);
-    // console.log(_keyArray);
-    // console.log(_targetBodyValue);
-    if(_result===false && _targetBodyValue)
-    {
-      let _targetFunctionName = _keyArray.join('-');
-      // console.log(_targetFunctionName);
-      _result = {
-        functionName: _targetFunctionName,
-        inputValues: _targetBodyValue
-      };
+// check this request has multipart form-data(form submit through axios)
+// convert mutipart request to POST request event json structure
+function isMultipartFormData(event) {
+  return new Promise(async (resolve, reject) => {
+    function generateJsonObject(param) {
+      return {[param.key]: param.object};
     }
-    if(_length_i-1==Number(i))
+    
+    if(
+      (event.headers['content-type']
+      && !event.headers['content-type'].includes('multipart/form-data'))
+      ||
+      (event.headers['Content-Type']
+      && !event.headers['Content-Type'].includes('multipart/form-data'))
+    )
     {
-      // console.log('isAvailableRequestStructure -------------------------');
-      // console.log(_result);
-      return _result;
+      resolve(false);
+      return;
     }
-  }
+    
+    const formDataEvent = await multipartParser.parse(event);
+    // console.log(formDataEvent);
+    let _isFormDataEventBodyJson = false;
+    if(formDataEvent.path)
+    {
+      let jsonKeys = formDataEvent.path.split('.');
+      delete formDataEvent.path;
+      let eventBody = {...formDataEvent};
+      //---------------------------
+      // this is a - reversed loop
+      // starts from max number(length), ends with 0 --> ex) 4, 3, 2, 1
+      for(let i = jsonKeys.length-1, _length_i = jsonKeys.length; _length_i+i > _length_i-1; i -= 1)
+      {
+        eventBody = generateJsonObject({key: jsonKeys[i], object: eventBody});
+      }
+      //---------------------------
+      _isFormDataEventBodyJson = eventBody;
+    }
+    resolve(_isFormDataEventBodyJson);
+  });
+}
+//==============================================================
+function isAvailableRequest(event, RequestMapper) {
+  return new Promise(async (resolve, reject) => {
+    //------------------------------------------------------
+    let _result = false;
+    for(let i = 0, _length_i = RequestMapper.length; i < _length_i; i += 1)
+    {
+      const mapperItem = RequestMapper[i];
+      // event.path
+      // event.httpMethod
+      // console.log(`=================================`);
+      // console.log(`${event.path} : ${mapperItem.path}`);
+      // console.log(`${event.httpMethod} : ${mapperItem.httpMethod}`);
+      // console.log(`${mapperItem.dataKeyStructure}`);
+      
+      if(
+        event.httpMethod==='GET'
+        &&event.path===mapperItem.path
+        &&event.httpMethod===mapperItem.httpMethod
+      )
+      {
+        //
+        if(!event.pathParameters)
+        {
+          sendResponse({
+            promise: {event: event, resolve: resolve, reject: reject},
+            result: {message: event.headers.Host},
+            err: false
+          });
+          return;
+        }
+        //
+        _result = {
+          functionName: mapperItem.handler,
+          inputValues: processMultiValueQueryParam(event.multiValueQueryStringParameters),
+        };
+      }
+      
+      if(
+        event.httpMethod==='POST'
+        &&event.path===mapperItem.path
+        &&event.httpMethod===mapperItem.httpMethod
+      )
+      {
+        // check this request has multipart form-data(form submit through axios)
+        let thisEventBodyJson = await isMultipartFormData(event);
+        
+        if(!thisEventBodyJson)
+        {
+          // this is NOT multipart form-data
+          thisEventBodyJson = JSON.parse(event.body);
+        }
+        
+        if(mapperItem.dataKeyStructure)
+        {
+          let _keyArray = mapperItem.dataKeyStructure.split('.');
+          thisEventBodyJson = getValueByJsonPath(mapperItem.dataKeyStructure, thisEventBodyJson);
+        }
+        
+        if(_result===false && thisEventBodyJson)
+        {
+          _result = {
+            functionName: mapperItem.handler,
+            inputValues: thisEventBodyJson
+          };
+        }
+      }
+    }
+    
+    resolve(_result);
+  });
 }
 //==============================================================
 function runServiceByPostKeys(param) {
@@ -163,6 +243,104 @@ function runServiceByPostKeys(param) {
         resolve(output);
       }
     });
+  });
+}
+//==============================================================
+function runAPIEndpoint(param) {
+  return new Promise(async (resolve, reject) => {
+    const protocol = param.protocol;
+    const event = param.event;
+    // const context = param.context;
+    //------------------------------------------------------
+    if(protocol.indexOf(event.headers['X-Forwarded-Proto'])<0)
+    {
+      sendResponse({
+        promise: {event: event, resolve: resolve, reject: reject},
+        result: {message:`${param.ENVJSON.MESSAGE.MSG3}`},
+        err: false
+      });
+      return;
+    }
+    if(['GET','POST'].indexOf(event.httpMethod.toUpperCase())<0)
+    {
+      sendResponse({
+        promise: {event: event, resolve: resolve, reject: reject},
+        result: {message:`${param.ENVJSON.MESSAGE.MSG4}`},
+        err: false
+      });
+      return;
+    }
+    //------------------------------------------------------
+    // GET
+    if(event.httpMethod==='GET')
+    {
+        //------------------------------------------------------
+        let isARSResult = await isAvailableRequest(event, param.ENVJSON.REQUEST_MAPPER);
+        if(!isARSResult)
+        {
+          sendResponse({
+            promise: {event: event, resolve: resolve, reject: reject},
+            result: {message:`${param.ENVJSON.MESSAGE.MSG1} - ${event.pathParameters.proxy}`},
+            err: false
+          });
+          return;
+        }
+        //------------------------------------------------------
+        runServiceByURLPath({
+          serviceName: param.ENVJSON.SERVICE_NAME,
+          functionName: isARSResult.functionName,
+          inputValues: isARSResult.inputValues,
+          apiStage: event.requestContext.stage
+        }).then(result => {
+          sendResponse({
+            promise: {event: event, resolve: resolve, reject: reject},
+            result: result,
+            err: false
+          });
+        }).catch(err => {
+          sendResponse({
+            promise: {event: event, resolve: resolve, reject: reject},
+            result: false,
+            err: err
+          });
+        });
+        return;
+    }
+    //------------------------------------------------------
+    // POST
+    if(event.httpMethod==='POST')
+    {
+        let isARSResult = await isAvailableRequest(event, param.ENVJSON.REQUEST_MAPPER);
+        if(!isARSResult)
+        {
+          sendResponse({
+            promise: {event: event, resolve: resolve, reject: reject},
+            result: {message:`${param.ENVJSON.MESSAGE.MSG2}`},
+            err: false
+          });
+          return;
+        }
+        //------------------------------------------------------
+        runServiceByPostKeys({
+          serviceName: param.ENVJSON.SERVICE_NAME,
+          functionName: isARSResult.functionName,
+          inputValues: isARSResult.inputValues,
+          apiStage: event.requestContext.stage
+        }).then(result => {
+          sendResponse({
+            promise: {event: event, resolve: resolve, reject: reject},
+            result: result,
+            err: false
+          });
+        }).catch(err => {
+          sendResponse({
+            promise: {event: event, resolve: resolve, reject: reject},
+            result: false,
+            err: err
+          });
+        });
+        return;
+    }
   });
 }
 //==============================================================
@@ -196,9 +374,5 @@ function sendResponse(param) {
 // export
 module.exports = {
   sendResponse,
-  isServicePath,
-  runServiceByURLPath,
-  processMultiValueQueryParam,
-  isAvailableRequestStructure,
-  runServiceByPostKeys,
+  runAPIEndpoint
 };
